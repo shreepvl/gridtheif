@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: grid-thief
-    runtime: node
-    buildCommand: npm ci
-    startCommand: npm start
-    healthCheckPath: /health
-    autoDeploy: true

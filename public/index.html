@@ -1,6 +1,234 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/><meta name="theme-color" content="#080a11"/><title>Grid Thief</title><link rel="stylesheet" href="/styles.css"/></head><body><main>
-<section id="home" class="screen home"><div class="home-grid"></div><header class="brand"><i>G</i><b>Grid Thief</b><small>LIVE ARENA</small></header><div class="hero"><p class="kicker">2–4 player territory heist</p><h1>Make every square yours.</h1><p>Sixty seconds. One shared city. Dash through the grid, hijack power-ups, and leave every rival with nowhere to run.</p><div class="tags"><span>Real-time rooms</span><span>Phone + keyboard</span><span>One winner</span></div></div><div class="entry"><div class="panel-head"><b>Enter the arena</b><small>NO LOGIN</small></div><label>Call sign<input id="name" maxlength="16" placeholder="e.g. Nova"/></label><button id="create" class="primary">Create a private room <b>→</b></button><div class="or">or join a crew</div><div class="join"><input id="code" maxlength="4" placeholder="ROOM CODE"/><button id="join">Join</button></div><p id="error"></p></div><aside class="brief"><b>How the heist works</b><span>01 · Claim tiles by moving</span><span>02 · Dash through territory</span><span>03 · Hijack power-ups</span></aside></section>
-<section id="lobby" class="screen lobby hidden"><header class="top"><div class="brand"><i>G</i><b>Grid Thief</b></div><div class="room">ROOM <strong id="room-code"></strong><button id="copy">Copy</button></div></header><div class="lobby-main"><p class="kicker">Crew assembly</p><h1 id="lobby-title">Waiting for rivals</h1><p>Send the room code. The host can launch as soon as two thieves are online.</p><div id="crew" class="crew"></div><button id="start" class="primary" disabled>Launch the heist <b>→</b></button><small>Move with arrow keys or WASD. Spacebar / Dash gives a two-tile burst.</small></div></section>
-<section id="game" class="screen game hidden"><header class="top"><div class="brand"><i>G</i><b>Grid Thief</b></div><div id="event" class="event">The grid is live</div><div id="timer" class="timer">01:00</div></header><div class="arena"><aside class="hud"><div class="hud-head"><span>Territory</span><b id="lead">0%</b></div><div id="scores"></div><div class="ability"><span>Dash</span><strong id="dash-status">Ready</strong><small>Cross two tiles · 3.6 sec recharge</small></div><div class="legend"><span><i class="f">F</i> Freeze rivals</span><span><i class="s">3</i> Steal a 3 × 3</span><span><i class="d">D</i> Restore dash</span></div></aside><div class="stage"><div class="frame"><div id="board" class="board"></div><div id="freeze" class="freeze hidden">SYSTEM FROZEN</div><div id="rush" class="rush hidden">FINAL 10</div></div><p><span>Neutral grid</span><b>Capture. Cut off. Control.</b><span>Power drop every 7.5 sec</span></p></div><div class="pad"><button data-dir="up" class="up">↑</button><button data-dir="left" class="left">←</button><button id="dash">DASH</button><button data-dir="right" class="right">→</button><button data-dir="down" class="down">↓</button></div></div></section>
-<section id="result" class="screen result hidden"><div class="result-card"><p class="kicker">Heist complete</p><h1 id="winner">Grid secured</h1><p id="result-copy"></p><div id="final-scores"></div><button id="again" class="primary">Start a new room <b>→</b></button></div></section>
-</main><script src="/socket.io/socket.io.js"></script><script type="module" src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07090e" />
+  <meta name="description" content="Grid Thief — Fast-paced multiplayer territory heist. Claim tiles, deploy powerups, and dominate the city in 60 seconds." />
+  <title>Grid Thief · Real-Time Territory Heist</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Orbitron:wght@600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="background-grid" aria-hidden="true"></div>
+  <div id="particle-canvas" aria-hidden="true"></div>
+
+  <header class="app-header" data-ui="header">
+    <div class="brand">
+      <div class="brand-glyph">G</div>
+      <div class="brand-text">
+        <span class="brand-title">GRID THIEF</span>
+        <span class="brand-badge">REAL-TIME HEIST</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="sound-btn" class="utility-btn" aria-label="Toggle Sound Effects" title="Toggle audio">
+        <span id="sound-label">SOUND ON</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <!-- HOME SCREEN -->
+    <section id="home-screen" class="screen home-view">
+      <div class="hero-column">
+        <div class="status-pill">FREE P2P MULTIPLAYER · ZERO SERVERS NEEDED</div>
+        <h1 class="hero-headline">Conquer every square in the city.</h1>
+        <p class="hero-description">
+          Sixty seconds. One shared grid. Out-maneuver rivals, hijack cryo-freezes and territory heists, and claim victory before the countdown hits zero.
+        </p>
+        <div class="feature-strip">
+          <span class="chip">Direct WebRTC DataChannel</span>
+          <span class="chip">Solo vs Smart Bots</span>
+          <span class="chip">Desktop &amp; Mobile D-Pad</span>
+        </div>
+      </div>
+
+      <div class="entry-card" data-ui="entry-card">
+        <div class="entry-header">
+          <h2 class="entry-title">Enter the Arena</h2>
+          <span class="entry-subtitle">Instant Matchmaking</span>
+        </div>
+
+        <div class="field-group">
+          <label for="player-name" class="field-label">Agent Call Sign</label>
+          <input id="player-name" class="text-input" type="text" maxlength="14" placeholder="e.g. Nova, Cipher, Phantom" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="action-stack">
+          <button id="solo-btn" class="btn btn-primary">
+            <span>Play Solo Match (vs Bots)</span>
+            <span class="btn-arrow">→</span>
+          </button>
+
+          <button id="create-btn" class="btn btn-secondary">
+            <span>Create Multiplayer Room</span>
+            <span class="btn-arrow">+</span>
+          </button>
+        </div>
+
+        <div class="divider-label">
+          <span>Or join with room code</span>
+        </div>
+
+        <div class="join-row">
+          <input id="code-input" class="text-input code-input" type="text" maxlength="4" placeholder="ROOM CODE" autocomplete="off" spellcheck="false" />
+          <button id="join-btn" class="btn btn-action">Join</button>
+        </div>
+
+        <div id="status-error" class="error-msg" role="alert" aria-live="polite"></div>
+      </div>
+
+      <section class="intel-bar" aria-label="How the game works">
+        <div class="intel-item">
+          <div>
+            <div class="intel-head">Claim Tiles</div>
+            <div class="intel-desc">Move over neutral squares to claim territory and build streaks.</div>
+          </div>
+        </div>
+        <div class="intel-item">
+          <div>
+            <div class="intel-head">Turbo Dash</div>
+            <div class="intel-desc">Press Space or Shift to burst across two tiles instantly.</div>
+          </div>
+        </div>
+        <div class="intel-item">
+          <div>
+            <div class="intel-head">Power Drops</div>
+            <div class="intel-desc">Snatch Freeze (F), 3x3 Steal (3), and Dash recharge (D) power-ups.</div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- LOBBY SCREEN -->
+    <section id="lobby-screen" class="screen lobby-view hidden">
+      <div class="lobby-panel" data-ui="lobby">
+        <div class="lobby-topbar">
+          <div class="room-indicator">
+            <span class="room-label">ROOM CODE</span>
+            <span id="room-code-display" class="room-code">----</span>
+          </div>
+          <button id="copy-btn" class="btn btn-action btn-sm">Copy Invite Link</button>
+        </div>
+
+        <div class="lobby-header">
+          <h2 id="lobby-heading" class="lobby-title">Assembling Crew</h2>
+          <p id="lobby-subheading" class="lobby-desc">Share the room code or invite link. The match can start as soon as operatives are ready.</p>
+        </div>
+
+        <div id="crew-list" class="crew-grid">
+          <!-- Populated dynamically -->
+        </div>
+
+        <div class="lobby-controls">
+          <button id="add-bot-btn" class="btn btn-secondary btn-sm">+ Add AI Bot</button>
+          <button id="launch-btn" class="btn btn-primary" disabled>
+            <span>Launch the Heist</span>
+            <span class="btn-arrow">→</span>
+          </button>
+        </div>
+
+        <div class="lobby-hint">
+          <span>Controls: WASD or Arrow Keys to navigate. Spacebar or Shift to trigger Dash.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- GAME ARENA SCREEN -->
+    <section id="game-screen" class="screen game-view hidden">
+      <div class="arena-topbar" data-ui="arena-bar">
+        <div id="match-event" class="event-ticker" role="status">The grid is live</div>
+        <div id="match-timer" class="clock-display" aria-label="Time remaining">01:00</div>
+      </div>
+
+      <div class="arena-layout">
+        <!-- HUD SIDEBAR -->
+        <aside class="hud-sidebar" data-ui="hud">
+          <div class="hud-card">
+            <div class="hud-meta">
+              <span class="hud-label">Territory Lead</span>
+              <strong id="lead-pct" class="hud-lead-val">0%</strong>
+            </div>
+            <div id="scores-container" class="scores-list">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <div class="hud-card ability-card">
+            <div class="ability-header">
+              <span class="hud-label">Turbo Dash</span>
+              <strong id="dash-meter" class="dash-ready">READY</strong>
+            </div>
+            <div class="dash-desc">2-tile jump · 3.6s cooldown</div>
+          </div>
+
+          <div class="hud-card legend-card">
+            <div class="legend-row">
+              <span class="legend-badge f-badge">F</span>
+              <span>Cryo Freeze Rivals</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-badge s-badge">3</span>
+              <span>Steal 3×3 Grid</span>
+            </div>
+            <div class="legend-row">
+              <span class="legend-badge d-badge">D</span>
+              <span>Recharge Dash</span>
+            </div>
+          </div>
+        </aside>
+
+        <!-- GAME STAGE -->
+        <div class="stage-container">
+          <div class="board-frame" data-ui="board-frame">
+            <div id="game-board" class="board-grid" role="grid" aria-label="Game board">
+              <!-- 16 x 12 tiles populated dynamically -->
+            </div>
+            <div id="freeze-alert" class="alert-overlay freeze-state hidden" aria-live="assertive">SYSTEMS FROZEN</div>
+            <div id="rush-alert" class="alert-overlay rush-state hidden" aria-live="assertive">FINAL 10 SECONDS</div>
+          </div>
+
+          <div class="stage-footer">
+            <span>192 Neutral &amp; Captured Tiles</span>
+            <span>Power Drops Every 7.5s</span>
+          </div>
+        </div>
+
+        <!-- MOBILE VIRTUAL PAD -->
+        <div class="mobile-pad" data-ui="dpad">
+          <button data-dir="up" class="pad-btn pad-up" aria-label="Move Up">↑</button>
+          <button data-dir="left" class="pad-btn pad-left" aria-label="Move Left">←</button>
+          <button id="mobile-dash" class="pad-btn pad-dash" aria-label="Trigger Dash">DASH</button>
+          <button data-dir="right" class="pad-btn pad-right" aria-label="Move Right">→</button>
+          <button data-dir="down" class="pad-btn pad-down" aria-label="Move Down">↓</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- RESULT SCREEN -->
+    <section id="result-screen" class="screen result-view hidden">
+      <div class="result-modal" data-ui="result-modal">
+        <div class="result-badge">HEIST COMPLETE</div>
+        <h2 id="result-title" class="result-heading">Grid Secured</h2>
+        <p id="result-summary" class="result-text">All territories locked down.</p>
+
+        <div id="final-scoreboard" class="scoreboard-list">
+          <!-- Populated dynamically -->
+        </div>
+
+        <button id="rematch-btn" class="btn btn-primary btn-block">
+          <span>Start New Match</span>
+          <span class="btn-arrow">→</span>
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Self-contained PeerJS for 100% Free WebRTC DataChannel Multiplayer on Netlify -->
+  <script src="/vendor/peerjs.min.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

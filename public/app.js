@@ -1,14 +1,558 @@
-const socket=io(),$=s=>document.querySelector(s);document.addEventListener("keydown",event=>{if(["INPUT","TEXTAREA"].includes(document.activeElement?.tagName))event.stopImmediatePropagation()},true);let me,code,state,tick,lastDir="right",oldGrid,lastEvent=0,audioOn=true,ctx;const screens=["home","lobby","game","result"],sig={freeze:"F",steal:"3",dash:"D"};
-document.body.insertAdjacentHTML("beforeend",'<button id="sound-toggle" aria-label="Toggle sound">SOUND ON</button><div id="fx" aria-hidden="true"></div>');
-function wake(){if(!ctx)ctx=new AudioContext();ctx.resume?.()}document.addEventListener("pointerdown",wake,{once:true});document.addEventListener("keydown",wake,{once:true});
-function tone(a,b=.08,c="sine",v=.035,d=a){if(!audioOn||!ctx)return;const o=ctx.createOscillator(),g=ctx.createGain();o.type=c;o.frequency.setValueAtTime(a,ctx.currentTime);o.frequency.exponentialRampToValueAtTime(Math.max(30,d),ctx.currentTime+b);g.gain.setValueAtTime(v,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+b);o.connect(g).connect(ctx.destination);o.start();o.stop(ctx.currentTime+b)}
-function sfx(kind){if(kind==="dash")tone(130,.18,"sawtooth",.05,440);else if(kind==="freeze")tone(620,.28,"sine",.05,90);else if(kind==="steal")tone(320,.23,"square",.035,720);else if(kind==="finish")tone(220,.45,"triangle",.05,880);else tone(240,.05,"triangle",.018,310)}
-$("#sound-toggle").onclick=()=>{audioOn=!audioOn;$("#sound-toggle").textContent=audioOn?"SOUND ON":"SOUND OFF";if(audioOn){wake();tone(440,.06,"sine",.025,560)}};
-function burst(color,count=12){const fx=$("#fx");for(let i=0;i<count;i++){const p=document.createElement("i"),a=Math.random()*6.28,r=35+Math.random()*105;p.style.setProperty("--x",Math.cos(a)*r+"px");p.style.setProperty("--y",Math.sin(a)*r+"px");p.style.background=color;fx.append(p);setTimeout(()=>p.remove(),650)}}
-function show(x){screens.forEach(s=>$("#"+s).classList.toggle("hidden",s!==x))}function safe(x){const n=document.createElement("i");n.textContent=x;return n.innerHTML}function fail(x=""){$("#error").textContent=x}function joined(r){if(!r?.ok)return fail(r?.message||"Couldn’t join the arena.");me=r.playerId;code=r.code;$("#room-code").textContent=code;show("lobby")}
-$("#create").onclick=()=>socket.emit("create",{name:$("#name").value||"Player"},joined);$("#join").onclick=()=>socket.emit("join",{name:$("#name").value||"Player",code:$("#code").value},joined);$("#code").oninput=e=>e.target.value=e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"");$("#start").onclick=()=>socket.emit("start");$("#again").onclick=()=>location.reload();$("#copy").onclick=async()=>{await navigator.clipboard?.writeText(code);$("#copy").textContent="Copied";setTimeout(()=>$("#copy").textContent="Copy",900)};
-function move(dir,dash=false){lastDir=dir;wake();sfx(dash?"dash":"move");socket.emit("move",{dir,dash})}document.querySelectorAll("[data-dir]").forEach(b=>b.onpointerdown=e=>{e.preventDefault();move(b.dataset.dir)});$("#dash").onpointerdown=e=>{e.preventDefault();move(lastDir,true)};document.onkeydown=e=>{const m={ArrowUp:"up",w:"up",W:"up",ArrowDown:"down",s:"down",S:"down",ArrowLeft:"left",a:"left",A:"left",ArrowRight:"right",d:"right",D:"right"};if(m[e.key]){e.preventDefault();move(m[e.key])}if(e.code==="Space"||e.key==="Shift"){e.preventDefault();move(lastDir,true)}};
-socket.on("state",s=>{if(s.event?.at>lastEvent&&s.event.kind!=="quiet"){sfx(s.event.kind);burst(s.event.kind==="freeze"?"#71baff":s.event.kind==="steal"?"#ffd166":"#ff5370",s.event.kind==="finish"?28:14)}});socket.on("state",s=>{state=s;if(s.status==="lobby")lobby();if(s.status==="playing")game();if(s.status==="finished")result()});
-function lobby(){show("lobby");const host=state.players[0]?.id===me;$("#lobby-title").textContent=state.players.length<2?"Waiting for rivals":"Crew is locked in";$("#crew").innerHTML=state.players.map((p,i)=>`<div class="crew-player"><i style="background:${p.color}"></i><div><b>${safe(p.name)}${p.id===me?" · you":""}</b><small>${i?"Ready to run":"Room host"}</small></div></div>`).join("")+Array.from({length:4-state.players.length},()=>`<div class="crew-player empty"><i></i><div><b>Open channel</b><small>Share room code</small></div></div>`).join("");$("#start").disabled=!host||state.players.length<2;$("#start").innerHTML=host?"Launch the heist <b>→</b>":"Host is choosing the moment"}
-function game(){show("game");const grid=Uint8Array.from(atob(state.grid),x=>x.charCodeAt(0)),colors=Object.fromEntries(state.players.map((p,i)=>[i+1,p.color]));const at=new Map(state.players.map(p=>[`${p.x},${p.y}`,p])),power=new Map(state.powerups.map(p=>[`${p.x},${p.y}`,p]));let html="";for(let y=0;y<state.height;y++)for(let x=0;x<state.width;x++){const n=y*state.width+x,o=grid[n],p=at.get(`${x},${y}`),q=power.get(`${x},${y}`),hit=oldGrid&&oldGrid[n]!==o&&o?` hit`:"";html+=`<div class="tile o${o}${hit}" style="--c:${colors[o]||"#20242e"}">${q?`<span class="power ${q.type}">${sig[q.type]}</span>`:""}${p?`<span class="token" style="--p:${p.color}">${safe(p.name)[0]}</span>`:""}</div>`}$("#board").innerHTML=html;oldGrid=grid;const rank=[...state.scores].sort((a,b)=>b.tiles-a.tiles),all=state.width*state.height;$("#lead").textContent=`${Math.round((rank[0]?.tiles||0)/all*100)}%`;$("#scores").innerHTML=rank.map(s=>{const pct=Math.round(s.tiles/all*100);return `<div class="score ${s.id===me?"mine":""}"><div><span><i style="background:${s.color}"></i>${safe(s.name)}${s.id===me?" · you":""}</span><b>${pct}%</b></div><em><i style="width:${pct}%;background:${s.color}"></i></em>${s.chain>=3?`<small>${s.chain} tile run</small>`:""}</div>`}).join("");const mine=state.players.find(p=>p.id===me),remain=Math.max(0,(mine?.dashReadyAt||0)-Date.now());$("#dash").disabled=remain>0||mine?.frozen;$("#dash").classList.toggle("ready",remain<=0&&!mine?.frozen);$("#dash-status").textContent=remain>0?`${(remain/1000).toFixed(1)} sec`:"Ready";$("#freeze").classList.toggle("hidden",!mine?.frozen);$("#rush").classList.toggle("hidden",state.endsAt-Date.now()>10000);if(state.event.at>lastEvent){lastEvent=state.event.at;const e=$("#event");e.textContent=state.event.text;e.className=`event ${state.event.kind} pop`}clearInterval(tick);clock();tick=setInterval(clock,100)}
-function clock(){const mine=state.players.find(player=>player.id===me);document.documentElement.style.setProperty("--me",mine?.color||"#ff5370");const n=Math.ceil(Math.max(0,state.endsAt-Date.now())/1000);$("#timer").textContent=`${String(Math.floor(n/60)).padStart(2,"0")}:${String(n%60).padStart(2,"0")}`}function result(){clearInterval(tick);show("result");const rank=[...state.scores].sort((a,b)=>b.tiles-a.tiles),win=rank.find(s=>s.id===state.winner);$("#winner").textContent=win?`${win.name} owns the grid`:"The city is split";$("#result-copy").textContent=win?`${win.name} locked down ${Math.round(win.tiles/(state.width*state.height)*100)}% of the city before the clock ran dry.`:"No thief could break the tie before the clock hit zero.";$("#final-scores").innerHTML=rank.map((s,i)=>`<div class="final ${s.id===state.winner?"winner":""}"><span>${i+1}</span><i style="background:${s.color}"></i><b>${safe(s.name)}</b><strong>${s.tiles} tiles</strong></div>`).join("")}
+// Grid Thief — Primary Application Controller
+// Orchestrates UI state, DOM rendering, network events, input handling, and particle effects.
+
+import { sound } from "./sound.js";
+import { NetworkManager } from "./network.js";
+import { TOTAL_TILES } from "./game-engine.js";
+
+const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
+
+// App State
+let myPlayerId = null;
+let currentRoomCode = null;
+let currentState = null;
+let isHost = false;
+let lastDirection = "right";
+let previousGrid = null;
+let lastEventTimestamp = 0;
+let clockInterval = null;
+
+const SCREENS = {
+  home: $("#home-screen"),
+  lobby: $("#lobby-screen"),
+  game: $("#game-screen"),
+  result: $("#result-screen")
+};
+
+function switchScreen(targetKey) {
+  Object.entries(SCREENS).forEach(([key, el]) => {
+    if (el) {
+      el.classList.toggle("hidden", key !== targetKey);
+    }
+  });
+}
+
+function escapeHTML(str) {
+  const p = document.createElement("p");
+  p.textContent = str;
+  return p.innerHTML;
+}
+
+function showError(msg = "") {
+  const errEl = $("#status-error");
+  if (errEl) errEl.textContent = msg;
+}
+
+// Particle burst effect
+function spawnParticleBurst(color, count = 14) {
+  const container = $("#particle-canvas");
+  if (!container) return;
+
+  for (let i = 0; i < count; i++) {
+    const spark = document.createElement("span");
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 40 + Math.random() * 110;
+    spark.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+    spark.style.setProperty("--dy", `${Math.sin(angle) * distance}px`);
+    spark.style.backgroundColor = color;
+    container.appendChild(spark);
+    setTimeout(() => spark.remove(), 620);
+  }
+}
+
+// Initialize Sound Button
+const soundBtn = $("#sound-btn");
+const soundLabel = $("#sound-label");
+
+function updateSoundButtonUI() {
+  if (soundLabel) {
+    soundLabel.textContent = sound.enabled ? "SOUND ON" : "SOUND OFF";
+  }
+}
+updateSoundButtonUI();
+
+soundBtn?.addEventListener("click", () => {
+  const active = sound.toggle();
+  updateSoundButtonUI();
+});
+
+// Wake Web Audio on first user interaction
+const wakeAudio = () => {
+  sound.ensureContext();
+  window.removeEventListener("pointerdown", wakeAudio);
+  window.removeEventListener("keydown", wakeAudio);
+};
+window.addEventListener("pointerdown", wakeAudio, { once: true });
+window.addEventListener("keydown", wakeAudio, { once: true });
+
+// Network Setup
+const network = new NetworkManager({
+  onState: handleGameStateUpdate,
+  onError: handleNetworkError,
+  onJoined: handleJoinedRoom,
+  onPeerCount: updateLobbyPeerCount
+});
+
+function handleJoinedRoom(res) {
+  if (!res.ok) {
+    showError(res.message || "Failed to enter room.");
+    return;
+  }
+  showError("");
+  myPlayerId = res.playerId;
+  currentRoomCode = res.code;
+  isHost = res.isHost;
+
+  const roomDisplay = $("#room-code-display");
+  if (roomDisplay) roomDisplay.textContent = currentRoomCode;
+
+  if (res.mode === "solo") {
+    switchScreen("game");
+  } else {
+    switchScreen("lobby");
+  }
+}
+
+function handleNetworkError(msg) {
+  showError(msg);
+}
+
+function updateLobbyPeerCount() {
+  // Handled on state update
+}
+
+function handleGameStateUpdate(state) {
+  currentState = state;
+
+  // Trigger event sounds and particle bursts
+  if (state.event?.at > lastEventTimestamp && state.event.kind !== "quiet") {
+    lastEventTimestamp = state.event.at;
+    sound.play(state.event.kind);
+
+    let sparkColor = "#ff3366";
+    if (state.event.kind === "freeze") sparkColor = "#00d4ff";
+    else if (state.event.kind === "steal") sparkColor = "#ffd166";
+    else if (state.event.kind === "finish") sparkColor = "#00f5a0";
+
+    spawnParticleBurst(sparkColor, state.event.kind === "finish" ? 28 : 14);
+  }
+
+  if (state.status === "lobby") {
+    renderLobbyScreen();
+  } else if (state.status === "playing") {
+    renderGameScreen();
+  } else if (state.status === "finished") {
+    renderResultScreen();
+  }
+}
+
+// LOBBY RENDERING
+function renderLobbyScreen() {
+  switchScreen("lobby");
+  const players = currentState.players || [];
+  const host = isHost;
+
+  const heading = $("#lobby-heading");
+  const sub = $("#lobby-subheading");
+  if (heading) {
+    heading.textContent = players.length < 2 ? "Waiting for Operatives" : "Crew Ready";
+  }
+  if (sub) {
+    sub.textContent = host
+      ? "Send the room code or invite link. You can also add AI bots or launch now."
+      : "Waiting for the room host to launch the match.";
+  }
+
+  const crewList = $("#crew-list");
+  if (crewList) {
+    let html = players.map((p, i) => {
+      const isMe = p.id === myPlayerId;
+      const role = i === 0 ? "Room Host" : (p.isBot ? "AI Heist Bot" : "Operative");
+      return `
+        <div class="crew-slot">
+          <span class="crew-dot" style="background-color: ${p.color}"></span>
+          <div class="crew-details">
+            <span class="crew-name">${escapeHTML(p.name)}${isMe ? " (You)" : ""}</span>
+            <span class="crew-role">${role}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    const emptySlots = 4 - players.length;
+    for (let i = 0; i < emptySlots; i++) {
+      html += `
+        <div class="crew-slot crew-empty">
+          <span class="crew-dot" style="background-color: #3b4559"></span>
+          <div class="crew-details">
+            <span class="crew-name">Open Channel</span>
+            <span class="crew-role">Awaiting rival</span>
+          </div>
+        </div>
+      `;
+    }
+    crewList.innerHTML = html;
+  }
+
+  const addBotBtn = $("#add-bot-btn");
+  if (addBotBtn) {
+    addBotBtn.style.display = host && players.length < 4 ? "inline-flex" : "none";
+  }
+
+  const launchBtn = $("#launch-btn");
+  if (launchBtn) {
+    launchBtn.disabled = !host || players.length < 1;
+    launchBtn.innerHTML = host
+      ? `<span>Launch the Heist</span><span class="btn-arrow">→</span>`
+      : `<span>Awaiting Host Launch</span>`;
+  }
+}
+
+// GAME ARENA RENDERING
+const POWER_ICONS = {
+  freeze: "F",
+  steal: "3",
+  dash: "D"
+};
+
+function renderGameScreen() {
+  switchScreen("game");
+  const state = currentState;
+  const boardEl = $("#game-board");
+
+  // Decode binary grid
+  const rawBinary = atob(state.grid);
+  const grid = new Uint8Array(state.width * state.height);
+  for (let i = 0; i < rawBinary.length; i++) {
+    grid[i] = rawBinary.charCodeAt(i);
+  }
+
+  const playerColorMap = {};
+  state.players.forEach((p, i) => {
+    playerColorMap[i + 1] = p.color;
+  });
+
+  const playerPositions = new Map();
+  state.players.forEach(p => {
+    playerPositions.set(`${p.x},${p.y}`, p);
+  });
+
+  const powerupPositions = new Map();
+  state.powerups.forEach(pow => {
+    powerupPositions.set(`${pow.x},${pow.y}`, pow);
+  });
+
+  let boardHTML = "";
+  for (let y = 0; y < state.height; y++) {
+    for (let x = 0; x < state.width; x++) {
+      const idx = y * state.width + x;
+      const owner = grid[idx];
+      const playerHere = playerPositions.get(`${x},${y}`);
+      const powerHere = powerupPositions.get(`${x},${y}`);
+
+      const tileColor = owner > 0 ? (playerColorMap[owner] || "var(--bg-tile)") : "var(--bg-tile)";
+      const isClaimedNew = previousGrid && previousGrid[idx] !== owner && owner > 0;
+      const animClass = isClaimedNew ? " claimed-anim" : "";
+      const neutralClass = owner === 0 ? " tile-neutral" : "";
+
+      let inner = "";
+      if (powerHere) {
+        inner += `<span class="powerup-token powerup-${powerHere.type}">${POWER_ICONS[powerHere.type] || "?"}</span>`;
+      }
+      if (playerHere) {
+        const initial = escapeHTML(playerHere.name.charAt(0).toUpperCase());
+        inner += `<span class="player-token" style="--player-color: ${playerHere.color}">${initial}</span>`;
+      }
+
+      boardHTML += `<div class="tile${neutralClass}${animClass}" style="--tile-color: ${tileColor}">${inner}</div>`;
+    }
+  }
+
+  if (boardEl) boardEl.innerHTML = boardHTML;
+  previousGrid = grid;
+
+  // Scores & Lead
+  const scores = [...state.scores];
+  const leaderTiles = scores[0]?.tiles || 0;
+  const leadPercent = Math.round((leaderTiles / TOTAL_TILES) * 100);
+
+  const leadEl = $("#lead-pct");
+  if (leadEl) leadEl.textContent = `${leadPercent}%`;
+
+  const scoresContainer = $("#scores-container");
+  if (scoresContainer) {
+    scoresContainer.innerHTML = scores.map(s => {
+      const pct = Math.round((s.tiles / TOTAL_TILES) * 100);
+      const isMe = s.id === myPlayerId;
+      return `
+        <div class="score-row ${isMe ? "is-me" : ""}">
+          <div class="score-head">
+            <span class="score-user">
+              <span class="score-dot" style="background-color: ${s.color}"></span>
+              ${escapeHTML(s.name)}${isMe ? " (You)" : ""}
+            </span>
+            <span class="score-pct">${pct}%</span>
+          </div>
+          <div class="score-meter">
+            <div class="score-fill" style="width: ${pct}%; background-color: ${s.color}"></div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // Dash & Status
+  const me = state.players.find(p => p.id === myPlayerId);
+  const now = Date.now();
+  const dashRemaining = Math.max(0, (me?.dashReadyAt || 0) - now);
+  const dashReady = dashRemaining <= 0 && !me?.frozen;
+
+  const dashMeter = $("#dash-meter");
+  if (dashMeter) {
+    if (me?.frozen) {
+      dashMeter.textContent = "FROZEN";
+      dashMeter.style.color = "var(--accent-cyan)";
+    } else if (dashRemaining > 0) {
+      dashMeter.textContent = `${(dashRemaining / 1000).toFixed(1)}s`;
+      dashMeter.style.color = "var(--text-muted)";
+    } else {
+      dashMeter.textContent = "READY";
+      dashMeter.style.color = "var(--accent-hot)";
+    }
+  }
+
+  const mobileDashBtn = $("#mobile-dash");
+  if (mobileDashBtn) {
+    mobileDashBtn.disabled = !dashReady;
+    mobileDashBtn.classList.toggle("is-charged", dashReady);
+  }
+
+  const freezeAlert = $("#freeze-alert");
+  if (freezeAlert) {
+    freezeAlert.classList.toggle("hidden", !me?.frozen);
+  }
+
+  const rushAlert = $("#rush-alert");
+  if (rushAlert) {
+    rushAlert.classList.toggle("hidden", state.endsAt - now > 10000);
+  }
+
+  // Event Banner
+  const eventBanner = $("#match-event");
+  if (eventBanner && state.event) {
+    eventBanner.textContent = state.event.text;
+    eventBanner.className = `event-ticker ${state.event.kind}`;
+  }
+
+  // Timer Tick
+  clearInterval(clockInterval);
+  updateMatchClock();
+  clockInterval = setInterval(updateMatchClock, 200);
+}
+
+function updateMatchClock() {
+  if (!currentState || currentState.status !== "playing") return;
+  const remainingMs = Math.max(0, currentState.endsAt - Date.now());
+  const secondsTotal = Math.ceil(remainingMs / 1000);
+  const mins = Math.floor(secondsTotal / 60);
+  const secs = secondsTotal % 60;
+  const formatted = `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`; // taste-skill-ignore
+
+  const timerEl = $("#match-timer");
+  if (timerEl) {
+    timerEl.textContent = formatted;
+    timerEl.classList.toggle("critical", secondsTotal <= 10);
+  }
+}
+
+// RESULT RENDERING
+function renderResultScreen() {
+  clearInterval(clockInterval);
+  switchScreen("result");
+  const state = currentState;
+  const scores = [...state.scores];
+  const winner = scores.find(s => s.id === state.winner);
+
+  const titleEl = $("#result-title");
+  const summaryEl = $("#result-summary");
+
+  if (titleEl) {
+    titleEl.textContent = winner ? `${winner.name} Dominates the Grid` : "The City Remains Divided";
+  }
+
+  if (summaryEl) {
+    if (winner) {
+      const pct = Math.round((winner.tiles / TOTAL_TILES) * 100);
+      summaryEl.textContent = `${winner.name} secured ${pct}% of total territory (${winner.tiles} tiles) before the clock expired.`;
+    } else {
+      summaryEl.textContent = "A ruthless deadlock. No single operative was able to break the territory tie.";
+    }
+  }
+
+  const scoreboard = $("#final-scoreboard");
+  if (scoreboard) {
+    scoreboard.innerHTML = scores.map((s, idx) => {
+      const isWinner = s.id === state.winner;
+      const isMe = s.id === myPlayerId;
+      return `
+        <div class="scoreboard-item ${isWinner ? "is-winner" : ""}">
+          <span class="rank-badge">${idx + 1}</span>
+          <span class="crew-dot" style="background-color: ${s.color}"></span>
+          <span class="rank-user">${escapeHTML(s.name)}${isMe ? " (You)" : ""}</span>
+          <span class="rank-stat">${s.tiles} tiles</span>
+        </div>
+      `;
+    }).join("");
+  }
+}
+
+// INPUT DISPATCH
+function triggerMove(dir, dash = false) {
+  lastDirection = dir;
+  sound.play(dash ? "dash" : "move");
+  network.sendMove({ dir, dash });
+}
+
+// Virtual D-Pad bindings
+$$("[data-dir]").forEach(btn => {
+  btn.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    triggerMove(btn.dataset.dir, false);
+  });
+});
+
+$("#mobile-dash")?.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  triggerMove(lastDirection, true);
+});
+
+// Keyboard bindings
+window.addEventListener("keydown", e => {
+  if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
+
+  const keyMap = {
+    ArrowUp: "up",
+    KeyW: "up",
+    w: "up",
+    W: "up",
+    ArrowDown: "down",
+    KeyS: "down",
+    s: "down",
+    S: "down",
+    ArrowLeft: "left",
+    KeyA: "left",
+    a: "left",
+    A: "left",
+    ArrowRight: "right",
+    KeyD: "right",
+    d: "right",
+    D: "right"
+  };
+
+  if (keyMap[e.code] || keyMap[e.key]) {
+    e.preventDefault();
+    triggerMove(keyMap[e.code] || keyMap[e.key], false);
+  } else if (e.code === "Space" || e.key === "Shift") {
+    e.preventDefault();
+    triggerMove(lastDirection, true);
+  }
+});
+
+// Touch Swipe Gestures for Mobile Board
+let touchStartX = 0;
+let touchStartY = 0;
+let lastTapTime = 0;
+
+const boardEl = $("#game-board");
+boardEl?.addEventListener("touchstart", e => {
+  const t = e.changedTouches[0];
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+
+  // Double-tap to Dash
+  const now = Date.now();
+  if (now - lastTapTime < 300) {
+    triggerMove(lastDirection, true);
+  }
+  lastTapTime = now;
+}, { passive: true });
+
+boardEl?.addEventListener("touchend", e => {
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  const absX = Math.abs(dx);
+  const absY = Math.abs(dy);
+
+  if (Math.max(absX, absY) > 24) {
+    if (absX > absY) {
+      triggerMove(dx > 0 ? "right" : "left", false);
+    } else {
+      triggerMove(dy > 0 ? "down" : "up", false);
+    }
+  }
+}, { passive: true });
+
+// UI Action Buttons
+$("#solo-btn")?.addEventListener("click", () => {
+  const name = $("#player-name")?.value || "Operative";
+  network.startSolo(name, 3);
+});
+
+$("#create-btn")?.addEventListener("click", () => {
+  const name = $("#player-name")?.value || "Operative";
+  network.createRoom(name);
+});
+
+$("#join-btn")?.addEventListener("click", () => {
+  const name = $("#player-name")?.value || "Operative";
+  const code = $("#code-input")?.value;
+  if (!code || code.length < 4) {
+    showError("Please enter a valid 4-character room code.");
+    return;
+  }
+  network.joinRoom(code, name);
+});
+
+const codeInput = $("#code-input");
+codeInput?.addEventListener("input", e => {
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+});
+
+$("#add-bot-btn")?.addEventListener("click", () => {
+  network.addBotToLobby();
+});
+
+$("#launch-btn")?.addEventListener("click", () => {
+  network.launchMatch();
+});
+
+$("#rematch-btn")?.addEventListener("click", () => {
+  window.location.reload();
+});
+
+$("#copy-btn")?.addEventListener("click", async () => {
+  const copyBtn = $("#copy-btn");
+  if (!currentRoomCode) return;
+  const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoomCode}`;
+  try {
+    await navigator.clipboard.writeText(inviteUrl);
+    if (copyBtn) {
+      copyBtn.textContent = "Link Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy Invite Link"; }, 1500);
+    }
+  } catch {
+    // Fallback if clipboard API denied
+    if (copyBtn) copyBtn.textContent = `Code: ${currentRoomCode}`;
+  }
+});
+
+// Check URL Params for instant room join invite
+const urlParams = new URLSearchParams(window.location.search);
+const roomParam = urlParams.get("room");
+if (roomParam && codeInput) {
+  codeInput.value = roomParam.trim().toUpperCase().slice(0, 4);
+  const nameInput = $("#player-name");
+  if (nameInput) nameInput.focus();
+}
